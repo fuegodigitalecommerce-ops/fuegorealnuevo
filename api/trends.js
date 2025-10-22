@@ -1,40 +1,29 @@
+// api/trends.js
 import fetch from "node-fetch";
 
 export default async function handler(req, res) {
-  const keyword = req.query.keyword || "tendencias";
-  const country = req.query.country || "LATAM";
-
   try {
-    const reqBody = {
-      comparisonItem: [{ keyword, geo: country === "LATAM" ? "" : country, time: "today 12-m" }],
-      category: 0,
-      property: "",
-    };
+    const { keyword = "navidad", country = "LATAM" } = req.query;
 
-    const url = `https://trends.google.com/trends/api/explore?hl=es-419&tz=-300&req=${encodeURIComponent(
-      JSON.stringify(reqBody)
-    )}`;
+    const url = `https://trends.google.com/trends/api/explore?hl=es-419&tz=-300&req={"comparisonItem":[{"keyword":"${keyword}","geo":"${country}","time":"now 7-d"}],"category":0,"property":""}`;
 
     const response = await fetch(url);
-    let raw = await response.text();
+    const text = await response.text();
 
-    raw = raw.replace(/^[\)\]\}'\s]+/, "").trim();
-    const start = raw.indexOf("{");
-    if (start > 0) raw = raw.substring(start);
-
-    const data = JSON.parse(raw);
+    const jsonStart = text.indexOf("{");
+    const jsonData = JSON.parse(text.slice(jsonStart));
 
     return res.status(200).json({
       ok: true,
       keyword,
-      region: country,
+      country,
       fuente: "Google Trends LATAM",
-      resultados: data,
+      resultados: jsonData,
     });
   } catch (error) {
     return res.status(500).json({
       ok: false,
-      error: "Error al obtener datos de tendencia",
+      error: "Error al obtener datos",
       detalle: error.message,
     });
   }
