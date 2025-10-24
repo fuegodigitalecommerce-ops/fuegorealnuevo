@@ -1,60 +1,55 @@
+// api/trends.js
 export default async function handler(req, res) {
+  const { keyword = "navidad", country = "CO" } = req.query;
+
   try {
-    const { keyword = "navidad", country = "CO" } = req.query;
-
-    // Definir URL base del proxy interno con fallback
-    const baseUrl =
-      process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : req.headers.origin || "http://localhost:3000";
-
-    // Proxy interno
-    const proxyUrl = `${baseUrl}/api/proxy?url=`;
-
     // URL real de Google Trends
-    const googleTrendsUrl = `https://trends.google.com/trends/api/widgetdata/relatedsearches?hl=es-419&tz=-300&geo=${country}&req={"restriction":{"type":"COUNTRY","geo": {"country": "${country}"}}, "keywordType":"QUERY", "keyword":"${keyword}","time":"today 12-m"}&token=APP6_UEAAAAAZfCzq8z1gI3D2skBkYYKXy8wTGae2hvU`;
+    const trendsUrl = `https://trends.google.com/trends/api/widgetdata/relatedsearches?hl=es-419&tz=-300&geo=${country}&req={"restriction":{"type":"COUNTRY","geo":{"country":"${country}"}},"keywordType":"QUERY","keyword":"${keyword}","time":"today 12-m"}&token=APP6_UEAAAAAZfCzq8z1gI3D2skBkYYKXy8wTGae2hvU`;
 
-    // Llamada al proxy interno
-    const response = await fetch(proxyUrl + encodeURIComponent(googleTrendsUrl));
+    // Petición con headers reales de navegador
+    const response = await fetch(trendsUrl, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+      },
+    });
+
     const text = await response.text();
 
-    // Verificamos si la respuesta no es HTML
-    if (text.trim().startsWith("<")) {
+    // Si Google Trends devuelve HTML o vacío, no seguimos
+    if (!text || text.startsWith("<")) {
       return res.status(500).json({
         ok: false,
         error: "Google Trends respondió HTML o vacío el contenido",
-        detalle: "Puede que el proxy gratuito esté saturado, intenta de nuevo",
+        detalle:
+          "Google podría estar bloqueando la consulta directa. Intenta más tarde o usa el proxy propio.",
       });
     }
 
-    // Limpieza del prefijo especial de Google Trends
-    const cleanText = text.replace(")]}',", "").trim();
+    // Limpiar el prefijo extraño de JSON de Google Trends
+    const cleanJson = text.replace(")]}',", "");
+    const data = JSON.parse(cleanJson);
 
-    // Convertir a JSON
-    const data = JSON.parse(cleanText);
-
-    // Extraer tendencias
-    const results =
-      data?.default?.rankedList?.[0]?.rankedKeyword?.map((item, i) => ({
-        id: i + 1,
+    // Extraer palabras relacionadas
+    const trends =
+      data.default?.rankedList?.[0]?.rankedKeyword?.map((item) => ({
         query: item.query,
         value: item.value,
-        link: `https://www.mercadolibre.com.co/search?as_word=${encodeURIComponent(item.query)}`,
-        imagen: `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(item.query)}`,
+        formattedValue: item.formattedValue,
       })) || [];
 
-    return res.status(200).json({
+    res.status(200).json({
       ok: true,
       keyword,
       country,
-      total: results.length,
-      results,
+      results: trends.slice(0, 10), // máximo 10 tendencias
     });
-  } catch (err) {
-    return res.status(500).json({
+  } catch (error) {
+    res.status(500).json({
       ok: false,
       error: "Error al obtener datos",
-      detalle: err.message,
+      detalle: error.message,
     });
   }
 }
