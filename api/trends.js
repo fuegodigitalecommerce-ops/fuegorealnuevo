@@ -1,51 +1,57 @@
-// api/trends.js
+import fetch from "node-fetch";
+
 export default async function handler(req, res) {
-  const { keyword = "navidad", country = "CO" } = req.query;
-
   try {
-    // URL real de Google Trends
-    const trendsUrl = `https://trends.google.com/trends/api/widgetdata/relatedsearches?hl=es-419&tz=-300&geo=${country}&req={"restriction":{"type":"COUNTRY","geo":{"country":"${country}"}},"keywordType":"QUERY","keyword":"${keyword}","time":"today 12-m"}&token=APP6_UEAAAAAZfCzq8z1gI3D2skBkYYKXy8wTGae2hvU`;
+    // --- 1️⃣ Captura de parámetros ---
+    const { keyword = "moda", country = "CO" } = req.query;
+    const geo = country.toUpperCase();
 
-    // Petición con headers reales de navegador
-    const response = await fetch(trendsUrl, {
+    // --- 2️⃣ URL de Google Trends ---
+    const trendsURL = `https://trends.google.com/trends/api/widgetdata/relatedsearches?hl=es-419&tz=-300&geo=${geo}&req={"restriction":{"type":"COUNTRY","geo":{"country":"${geo}"}},"keywordType":"QUERY","keyword":"${keyword}","time":"today 12-m"}&token=APP6_UEAAAAAZfCzq8z1gI3D2skBkYYKXy8wTGae2hvU`;
+
+    // --- 3️⃣ Llamada real al endpoint ---
+    const response = await fetch(trendsURL, {
       headers: {
         "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
       },
     });
 
     const text = await response.text();
 
-    // Si Google Trends devuelve HTML o vacío, no seguimos
+    // --- 4️⃣ Validación de respuesta ---
     if (!text || text.startsWith("<")) {
       return res.status(500).json({
         ok: false,
         error: "Google Trends respondió HTML o vacío el contenido",
         detalle:
-          "Google podría estar bloqueando la consulta directa. Intenta más tarde o usa el proxy propio.",
+          "Puede que Google esté bloqueando la solicitud directa. Se recomienda usar el proxy interno o autenticación API.",
       });
     }
 
-    // Limpiar el prefijo extraño de JSON de Google Trends
-    const cleanJson = text.replace(")]}',", "");
-    const data = JSON.parse(cleanJson);
+    // --- 5️⃣ Limpieza del texto JSON devuelto ---
+    const clean = text.replace(/^\)\]\}',/, "");
+    const data = JSON.parse(clean);
 
-    // Extraer palabras relacionadas
-    const trends =
-      data.default?.rankedList?.[0]?.rankedKeyword?.map((item) => ({
-        query: item.query,
-        value: item.value,
-        formattedValue: item.formattedValue,
-      })) || [];
+    // --- 6️⃣ Extracción segura de los términos relacionados ---
+    const ranked = data.default?.rankedList?.[0]?.rankedKeyword || [];
+    const results = ranked.map((item, i) => ({
+      id: i + 1,
+      title: item.topic?.title || item.query || "Sin título",
+      type: item.topic?.type || "Tendencia",
+      value: item.value?.[0] || 0,
+    }));
 
+    // --- 7️⃣ Devuelve el JSON estructurado ---
     res.status(200).json({
       ok: true,
       keyword,
-      country,
-      results: trends.slice(0, 10), // máximo 10 tendencias
+      country: geo,
+      total: results.length,
+      results,
     });
   } catch (error) {
+    console.error("❌ Error en /api/trends:", error);
     res.status(500).json({
       ok: false,
       error: "Error al obtener datos",
