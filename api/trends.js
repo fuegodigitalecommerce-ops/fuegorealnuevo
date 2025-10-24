@@ -1,94 +1,60 @@
-// 🔥 FUEGO API LATAM – versión 4 real
+// /api/trends.js
+import fetch from "node-fetch";
+
 export default async function handler(req, res) {
-  const { keyword = "navidad", country = "CO" } = req.query;
-
-  const proxyBase = "https://fuego-proxy-latam.vercel.app/api/proxy";
-  const googleBase = "https://trends.google.com/trends/api/widgetdata/relatedsearches";
-  const tokenList = [
-    "APP6_UEAAAAAZfCzq8z1gI3D2skBkYYKXy8wTGae2hvU",
-   
-    "APP6_UEAAAAAZEXAMPLE1",
-    "APP6_UEAAAAAZEXAMPLE2"
-  ];
-
-  // Mapeo de países compatibles con Mercado Libre
-  const meliMap = {
-    CO: "MCO",
-    MX: "MLM",
-    AR: "MLA",
-    CL: "MLC",
-    PE: "MPE",
-    UY: "MLU",
-    EC: "MEC"
-  };
-
-  const site = meliMap[country] || "MCO";
-
   try {
-    let json = null;
-    let results = [];
+    const keyword = req.query.keyword || "navidad";
+    const country = req.query.country || "CO";
 
-    // Intentar obtener desde Google Trends
-    for (const token of tokenList) {
-      const reqUrl = `${googleBase}?hl=es-419&tz=-300&geo=${country}&req={"restriction":{"type":"COUNTRY","geo":{"country":"${country}"}},"keywordType":"QUERY","keyword":"${keyword}","time":"today 12-m"}&token=${token}`;
-      const fullUrl = `${proxyBase}?url=${encodeURIComponent(reqUrl)}`;
-      const resp = await fetch(fullUrl);
-      const text = await resp.text();
+    // ---- GOOGLE TRENDS ----
+    const trendsURL = `https://trends.google.com/trends/api/widgetdata/relatedsearches?hl=es-419&tz=-300&geo=${country}&req={"restriction":{"type":"COUNTRY","geo":{"country":"${country}"}},"keywordType":"QUERY","keyword":"${keyword}","time":"today 12-m"}&token=APP6_UEAAAAAZfCzq8z1gI3D2skBkYYKXy8wTGae2hvU`;
 
-      if (!text || text.startsWith("<")) continue;
+    const trendsResponse = await fetch(trendsURL);
+    let trendsText = await trendsResponse.text();
 
-      try {
-        json = JSON.parse(text.replace(")]}',", ""));
-        results = (json.default?.rankedList?.[0]?.rankedKeyword || []).map((k, i) => ({
-          id: i + 1,
-          title: k.topic?.title || k.query || "Tendencia sin nombre",
-          value: k.value || 0,
-          source: "GoogleTrends"
-        }));
-        if (results.length > 0) break;
-      } catch {
-        continue;
-      }
-    }
+    // Limpiar el JSON que devuelve Google
+    const jsonStart = trendsText.indexOf("{");
+    if (jsonStart === -1) throw new Error("Google Trends devolvió HTML");
+    trendsText = trendsText.slice(jsonStart);
+    const trendsData = JSON.parse(trendsText);
 
-    // Si no hay resultados de Google, intentar Mercado Libre
-    if (results.length === 0) {
-      const meliUrl = `https://api.mercadolibre.com/sites/${site}/search?q=${encodeURIComponent(keyword)}`;
-      const meliResp = await fetch(meliUrl);
-      const meliData = await meliResp.json();
+    const results = trendsData.default?.rankedList?.[0]?.rankedKeyword?.slice(0, 5).map(item => ({
+      title: item.topic.title,
+      type: item.topic.type
+    })) || [];
 
-      results = (meliData.results || []).slice(0, 10).map((item, i) => ({
-        id: i + 1,
-        title: item.title,
-        price: item.price,
-        thumbnail: item.thumbnail,
-        permalink: item.permalink,
-        source: "MercadoLibre"
-      }));
-    }
+    // ---- MERCADO LIBRE ----
+    const mlResponse = await fetch(`https://api.mercadolibre.com/sites/ML${country}/search?q=${encodeURIComponent(keyword)}`);
+    const mlData = await mlResponse.json();
 
-    // Fallback con sugerencias manuales
-    if (results.length === 0) {
-      const fallback = [
-        { id: 1, title: "Decoración navideña artesanal", source: "FUEGO_AI" },
-        { id: 2, title: "Luces LED y adornos festivos", source: "FUEGO_AI" },
-        { id: 3, title: "Regalos personalizados en tendencia", source: "FUEGO_AI" },
-        { id: 4, title: "Accesorios ecológicos para el hogar", source: "FUEGO_AI" }
-      ];
-      results = fallback;
-    }
+    const mlResults = mlData.results?.slice(0, 5).map(item => ({
+      title: item.title,
+      price: item.price,
+      link: item.permalink,
+      thumbnail: item.thumbnail
+    })) || [];
 
-    res.status(200).json({
+    // ---- GOOGLE IMÁGENES ---- (búsqueda simple con proxy gratuito)
+    const imageSearchURL = `https://customsearch.googleapis.com/customsearch/v1?q=${encodeURIComponent(keyword)}&searchType=image&num=3&key=AIzaSyC-FAKEKEY1234567890&cx=FAKECXID123`; // Placeholder
+    // Si no tienes API key, puedes omitir este bloque
+
+    // ---- RESPUESTA FINAL ----
+    return res.status(200).json({
       ok: true,
       keyword,
       country,
-      resultsCount: results.length,
-      results
+      sources: {
+        trends: results,
+        mercadoLibre: mlResults,
+      },
+      totalResults: results.length + mlResults.length
     });
+
   } catch (error) {
-    res.status(500).json({
+    console.error("🔥 Error general:", error);
+    return res.status(500).json({
       ok: false,
-      error: "Error general en FUEGO API",
+      error: "Error al obtener datos en tiempo real",
       detalle: error.message
     });
   }
