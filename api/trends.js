@@ -1,12 +1,17 @@
-// /api/trends.js
 export default async function handler(req, res) {
   try {
     const { keyword = "navidad", country = "CO" } = req.query;
 
-    // Proxy interno dentro del mismo proyecto (sin depender de otros dominios)
-    const proxyUrl = `${req.headers.origin}/api/proxy?url=`;
+    // Definir URL base del proxy interno con fallback
+    const baseUrl =
+      process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : req.headers.origin || "http://localhost:3000";
 
-    // URL real de Google Trends (tendencias relacionadas)
+    // Proxy interno
+    const proxyUrl = `${baseUrl}/api/proxy?url=`;
+
+    // URL real de Google Trends
     const googleTrendsUrl = `https://trends.google.com/trends/api/widgetdata/relatedsearches?hl=es-419&tz=-300&geo=${country}&req={"restriction":{"type":"COUNTRY","geo": {"country": "${country}"}}, "keywordType":"QUERY", "keyword":"${keyword}","time":"today 12-m"}&token=APP6_UEAAAAAZfCzq8z1gI3D2skBkYYKXy8wTGae2hvU`;
 
     // Llamada al proxy interno
@@ -17,42 +22,33 @@ export default async function handler(req, res) {
     if (text.trim().startsWith("<")) {
       return res.status(500).json({
         ok: false,
-        error: "Google Trends respondió HTML o vació el contenido",
+        error: "Google Trends respondió HTML o vacío el contenido",
         detalle: "Puede que el proxy gratuito esté saturado, intenta de nuevo",
       });
     }
 
-    // Google Trends devuelve texto con prefijo ")]}'," que hay que limpiar
+    // Limpieza del prefijo especial de Google Trends
     const cleanText = text.replace(")]}',", "").trim();
 
-    // Intentamos convertir a JSON
+    // Convertir a JSON
     const data = JSON.parse(cleanText);
 
-    // Extraemos resultados
+    // Extraer tendencias
     const results =
-      data?.default?.rankedList?.[0]?.rankedKeyword?.map((item, index) => ({
-        id: index + 1,
+      data?.default?.rankedList?.[0]?.rankedKeyword?.map((item, i) => ({
+        id: i + 1,
         query: item.query,
         value: item.value,
+        link: `https://www.mercadolibre.com.co/search?as_word=${encodeURIComponent(item.query)}`,
+        imagen: `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(item.query)}`,
       })) || [];
-
-    // Simulamos conexión a productos de Mercado Libre (ejemplo futuro)
-    const productos = results.map((r) => ({
-      ...r,
-      producto: `https://www.mercadolibre.com.co/search?as_word=${encodeURIComponent(
-        r.query
-      )}`,
-      imagen: `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(
-        r.query
-      )}`,
-    }));
 
     return res.status(200).json({
       ok: true,
       keyword,
       country,
-      total: productos.length,
-      results: productos,
+      total: results.length,
+      results,
     });
   } catch (err) {
     return res.status(500).json({
