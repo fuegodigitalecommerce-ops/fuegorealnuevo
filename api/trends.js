@@ -19,7 +19,7 @@ export default async function handler(req, res) {
     };
 
     const proxyUrl =
-      "https://fuego-proxy-latam-2nw6hr0ic-juan-coneos-projects.vercel.app/api/proxy?url=";
+      const proxyUrl = `${req.headers.origin}/api/proxy?url=`;
 
     const googleUrl = `https://trends.google.com/trends/api/explore?hl=es-419&tz=-300&req=${encodeURIComponent(
       JSON.stringify(reqBody)
